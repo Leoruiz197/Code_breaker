@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>INFSEC • Manager (Cofres)</title>
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#ffffff; --muted:#6b7280;
+      --accent:#0b74ff; --text:#0f1724; --line:#e6eef8;
+      --radius:12px; --warn:#b45309; --warn-bg:#fff7ed; --ok:#047857;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;color:var(--text);background:linear-gradient(180deg,#f9fbff,#eef6ff);padding:18px;}
+    .wrap{max-width:1080px;margin:0 auto}
+    h1{margin:0 0 8px;font-size:20px;color:var(--accent)}
+    p.lead{margin:0 0 18px;color:var(--muted)}
+    .card{background:var(--card);border-radius:var(--radius);padding:14px;border:1px solid var(--line);box-shadow:0 4px 18px rgba(10,20,40,.04);margin-bottom:12px}
+    label{display:block;font-weight:600;margin-bottom:6px}
+    input[type="number"], input[type="text"], input[type="color"], select{width:100%;padding:8px;border-radius:10px;border:1px solid var(--line);background:transparent}
+    .row{display:flex;gap:10px;align-items:center}
+    .row > *{flex:1}
+    .inline{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    button{background:var(--accent);color:#fff;border:0;padding:10px 12px;border-radius:10px;font-weight:700;cursor:pointer}
+    button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+    .teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-top:10px}
+    .team{display:flex;gap:8px;align-items:flex-start;padding:10px;border-radius:10px;border:1px solid var(--line)}
+    .color-swatch{width:36px;height:36px;border-radius:6px;border:1px solid #ddd;flex:0 0 36px}
+    .team .meta{flex:1;display:flex;flex-direction:column;gap:8px}
+    .small{font-size:13px;color:var(--muted)}
+    .hint{font-size:13px;color:var(--muted);margin-top:8px}
+    .warn{background:var(--warn-bg);color:var(--warn);border:1px dashed #fdba74;padding:10px;border-radius:10px;margin:10px 0 0}
+    #log{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:#0b1220;color:#e2e8f0;padding:10px;border-radius:10px;min-height:120px;max-height:240px;overflow:auto}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:#eef6ff;color:#0b74ff}
+    .ok-badge{background:#ecfdf5;color:#047857;border-color:#a7f3d0}
+
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    th,td{padding:10px 12px;text-align:left;font-size:14px;vertical-align:top}
+    th{color:#0b3577}
+    tbody tr{background:#fff;border:1px solid var(--line)}
+    tbody tr td:first-child{border-top-left-radius:10px;border-bottom-left-radius:10px}
+    tbody tr td:last-child{border-top-right-radius:10px;border-bottom-right-radius:10px}
+    .chip{display:inline-flex;align-items:center;gap:8px}
+    .chip .sw{width:16px;height:16px;border-radius:4px;border:1px solid #d0d7e2;box-shadow:inset 0 0 0 3px #00000014}
+
+    .pw-line{font-family:ui-monospace,Consolas,monospace;font-size:13px;display:block;line-height:1.25}
+    .btnbar{display:flex;gap:8px;flex-wrap:wrap}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid var(--line);border-radius:999px;padding:6px 10px}
+  </style>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Manager • INFSEC — Cofres (MQTT)</h1>
+    <p class="lead">
+      Gere equipes, publique configurações e controle os cofres via MQTT.
+      Configs por cofre em <code>fiap/cofreNN/config</code> — comandos de controle em <code>fiap/cofreNN</code>.
+    </p>
+
+    <!-- Conexão e ações globais -->
+    <div class="card">
+      <div class="inline">
+        <button id="btnConnect">Conectar</button>
+        <span>Status: <span id="status" class="badge">desconectado</span></span>
+        <span id="lastPub" class="small"></span>
+        <div style="margin-left:auto"></div>
+        <button id="btnGenerate">Gerar padrões & publicar</button>
+        <button id="btnUpdate" class="ghost">Atualizar equipes</button>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div>
+          <label for="globalAngle">Ângulo de fechamento (global)</label>
+          <input id="globalAngle" type="number" min="0" max="180" value="67" />
+        </div>
+        <div>
+          <label for="passwordsPerSafe">Senhas por cofre (GLOBAL)</label>
+          <input id="passwordsPerSafe" type="number" min="1" max="100" value="3" />
+        </div>
+        <div style="flex:0 0 420px;align-self:flex-end" class="btnbar">
+          <button id="btnSetAngleAll" class="ghost">Setar ângulo (todos)</button>
+          <button id="btnSetNumSenhasAll" class="ghost">Enviar num_senhas (todos)</button>
+          <button id="btnSetColorsAll" class="ghost">Enviar cores (todos)</button>
+        </div>
+      </div>
+      <p class="hint">Broker WebSocket TLS: <code>wss://broker.hivemq.com:8884/mqtt</code>. Envio aos cofres: <code>fiap/cofreNN/config</code>.</p>
+    </div>
+
+    <!-- Parâmetros de quantidade e prefixo -->
+    <div class="card">
+      <label for="numTeams">Quantidade de equipes</label>
+      <div class="row">
+        <input id="numTeams" type="number" min="1" max="50" value="10" />
+        <div style="flex:0 0 220px">
+          <label for="defaultPrefix" class="small">Prefixo dos nomes</label>
+          <input id="defaultPrefix" type="text" value="equipe" />
+        </div>
+      </div>
+
+      <div id="dupWarn" class="warn" style="display:none">
+        ⚠️ Existem cores repetidas. Altere manualmente ou clique em <b>Gerar padrões & publicar</b> para refazer a paleta.
+      </div>
+      <p class="hint">Cores vívidas (S=100, V=100). As primárias (vermelho, verde, azul) vêm primeiro.</p>
+    </div>
+
+    <!-- Cards das equipes -->
+    <div class="card">
+      <label>Equipes (editar nome, cor e enviar configs por cofre)</label>
+      <div id="teamsContainer" class="teams" aria-live="polite"></div>
+      <p class="small">Renomear muda também o <b>tópico</b> que receberá a configuração. Botões enviam para <code>fiap/cofreNN/config</code> do cofre correspondente.</p>
+    </div>
+
+    <!-- NOVO: Gestão do Cofre -->
+    <div class="card">
+      <label>Gestão do Cofre (comandos ao vivo)</label>
+
+      <div class="row">
+        <div>
+          <label for="cofreSelect" class="small">Destino</label>
+          <select id="cofreSelect"></select>
+        </div>
+        <div style="flex:2">
+          <div class="small">Comandos simples</div>
+          <div class="btnbar" style="margin-top:6px">
+            <button id="cmdAbrir"  class="ghost">Enviar {"comando":"abrir"}</button>
+            <button id="cmdFechar" class="ghost">{"comando":"fechar"}</button>
+            <button id="cmdLuz"    class="ghost">{"comando":"luz"}</button>
+            <button id="cmdApagar" class="ghost">{"comando":"apagar"}</button>
+            <button id="cmdTDir"   class="ghost">{"comando":"tranca_direita"}</button>
+            <button id="cmdTEsq"   class="ghost">{"comando":"tranca_esquerda"}</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px">
+        <div>
+          <div class="small">Tentativa (animação)</div>
+          <div class="pill" style="margin-top:6px">
+            <label class="small">tentando</label>
+            <input type="checkbox" id="chkTentando" />
+            <label class="small" style="margin-left:10px">etapa</label>
+            <select id="selTentandoEtapa" style="width:auto"></select>
+          </div>
+          <div class="small" style="margin-top:8px;color:var(--muted)">
+            Ao enviar para <b>Todos</b>, cada cofre recebe sua <b>cor da equipe</b> automaticamente.
+          </div>
+          <div class="btnbar" style="margin-top:8px">
+            <button id="cmdTentando" class="ghost">
+              Enviar {"comando":{"tentando":&lt;bool&gt;,"etapa":&lt;n&gt;,"cor":{"R":...}}}
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <div class="small">Correta (animação de abertura)</div>
+          <div class="small" style="margin-top:6px;color:var(--muted)">
+            Envia {"comando":"correta","cor":RGB}. Para <b>Todos</b>, usa a cor de cada cofre.
+          </div>
+          <div class="btnbar" style="margin-top:8px">
+            <button id="cmdCorreta" class="ghost">Enviar {"comando":"correta"}</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="hint">Os comandos são publicados em <code>fiap/cofreNN</code> (sem <code>/config</code>) com <b>retain=false</b>.</p>
+    </div>
+
+    <!-- Monitor -->
+    <div class="card">
+      <label>Painel de Acompanhamento do Jogo (ao vivo)</label>
+      <table>
+        <thead>
+          <tr>
+            <th>Equipe</th>
+            <th>Cor</th>
+            <th>Senha correta</th>
+            <th>Cofre de destino</th>
+            <th>Etapa</th>
+            <th>Tentativa</th>
+            <th>Resultado (B/O)</th>
+            <th class="small">Atualização</th>
+          </tr>
+        </thead>
+        <tbody id="monitorBody"></tbody>
+      </table>
+      <p class="hint">Ouvindo <code>+/enviado</code>, <code>+/resposta</code> e <code>+/senhaCorreta</code> (retain).</p>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <label>Log</label>
+      <div id="log"></div>
+    </div>
+  </div>
+
+  <script>
+    // ---------- Helpers ----------
+    const $ = id => document.getElementById(id);
+    const clamp = (v,min,max)=> Math.max(min, Math.min(max, v));
+    const pad = (n, len=2) => String(n).padStart(len, '0');
+    const log = (msg)=>{ const el=$('log'); const now=new Date().toLocaleTimeString(); el.innerText += `[${now}] ${msg}\n`; el.scrollTop=el.scrollHeight; };
+    const setStatus=(txt, ok=false)=>{ const s=$('status'); s.textContent=txt; s.className = 'badge' + (ok ? ' ok-badge' : ''); };
+    const escapeHtml = s => String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+    const normalizeHex = h => { h = String(h).trim(); if (!h.startsWith('#')) h = '#'+h; if (h.length===4){ h = '#'+[h[1],h[2],h[3]].map(c=>c+c).join(''); } return h.toUpperCase(); };
+    const hexNoHashLower = h => normalizeHex(h).replace('#','').toLowerCase();
+
+    function hsvToHex(h,s,v){
+      s/=100; v/=100;
+      const k = n => (n + h/60) % 6;
+      const f = n => v - v*s*Math.max(Math.min(k(n),4-k(n),1),0);
+      const r = Math.round(f(5)*255), g = Math.round(f(3)*255), b = Math.round(f(1)*255);
+      return '#'+[r,g,b].map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();
+    }
+    const hueDist = (a,b) => { const d = Math.abs(a-b)%360; return d > 180 ? 360 - d : d; };
+
+    function hexToRgb(hex){
+      hex = normalizeHex(hex);
+      const R = parseInt(hex.slice(1,3), 16);
+      const G = parseInt(hex.slice(3,5), 16);
+      const B = parseInt(hex.slice(5,7), 16);
+      return { R, G, B };
+    }
+
+    // ---------- Estado ----------
+    let state = {
+      numTeams: 10,
+      prefix: 'equipe',
+      passwordsPerSafe: 3,  // GLOBAL
+      globalAngle: 67,      // GLOBAL
+      teams: []             // { name, color, _dirty, ... }
+    };
+    const MIN_SEP = 18;
+
+    const lastEvents = {};
+    const teamPasswords = {};
+
+    // ---------- Paleta ----------
+    function buildDistinctPalette(n){
+      const hues = [];
+      const prim = [0,120,240];
+      const sec  = [60,180,300];
+      for(const h of prim){ if(hues.length<n) hues.push(h); }
+      for(const h of sec){ if(hues.length<n) hues.push(h); }
+      let i = 0;
+      while(hues.length < n){
+        let h = (i * 137.508) % 360;
+        let tries = 0;
+        while(hues.some(x => hueDist(x, h) < MIN_SEP) && tries < 360){ h = (h + 7) % 360; tries++; }
+        hues.push(h); i++;
+      }
+      return hues.map(h => hsvToHex(h, 100, 100));
+    }
+    function ensureUniqueColors(count){ return buildDistinctPalette(count).slice(0,count); }
+
+    // ---------- Build / Render ----------
+    function buildTeams(n, prefix){
+      const palette = ensureUniqueColors(n);
+      const teams = [];
+      for(let i=1;i<=n;i++){
+        teams.push({ name: `${prefix}${pad(i,2)}`, color: palette[i-1] });
+      }
+      return teams;
+    }
+
+    function cofreConfigTopic(i0){ return `fiap/cofre${pad(i0+1,2)}/config`; }
+    function cofreCmdTopic(i0){ return `fiap/cofre${pad(i0+1,2)}`; }
+
+    function renderTeams(){
+      const teamsContainer = $('teamsContainer');
+      teamsContainer.innerHTML = '';
+      state.teams.forEach((t, idx) => {
+        const node = document.createElement('div');
+        node.className = 'team';
+        node.innerHTML = `
+          <div class="color-swatch" style="background:${t.color}"></div>
+          <div class="meta">
+            <input data-idx="${idx}" class="team-name" type="text" value="${escapeHtml(t.name)}" />
+            <div class="inline" style="gap:8px;align-items:center">
+              <input data-idx="${idx}" class="team-color" type="color" value="${t.color}" style="flex:0 0 60px" />
+              <div style="flex:1;">
+                <div class="small">Tópico da equipe: <code>${escapeHtml(t.name)}</code></div>
+                <div class="small">Cofre alvo: <code>${cofreConfigTopic(idx)}</code></div>
+              </div>
+              <button data-idx="${idx}" class="btn-remove ghost" title="Remover" style="flex:0 0 40px">✕</button>
+            </div>
+
+            <div class="row">
+              <div>
+                <label class="small">Ângulo deste cofre</label>
+                <input type="number" min="0" max="180" value="${state.globalAngle}" class="angle-input" data-idx="${idx}" />
+              </div>
+            </div>
+            <div class="btnbar">
+              <button class="btn-angle-send ghost" data-idx="${idx}">Enviar ângulo</button>
+              <button class="btn-color-send ghost" data-idx="${idx}">Enviar cor</button>
+            </div>
+          </div>
+        `;
+        teamsContainer.appendChild(node);
+      });
+
+      // handlers
+      document.querySelectorAll('.team-name').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const i = +e.target.dataset.idx;
+          const prev = state.teams[i].name;
+          state.teams[i].name = e.target.value.trim() || state.teams[i].name;
+          state.teams[i]._dirty = true;
+          if (lastEvents[prev]) { lastEvents[state.teams[i].name] = lastEvents[prev]; delete lastEvents[prev]; }
+          if (teamPasswords[prev]) { teamPasswords[state.teams[i].name] = teamPasswords[prev]; delete teamPasswords[prev]; }
+          renderMonitor();
+        });
+      });
+      document.querySelectorAll('.team-color').forEach(inp => {
+        inp.addEventListener('input', (e) => {
+          const i = +e.target.dataset.idx;
+          state.teams[i].color = normalizeHex(e.target.value);
+          state.teams[i]._dirty = true;
+          const swatch = $('teamsContainer').children[i].querySelector('.color-swatch');
+          if(swatch) swatch.style.background = state.teams[i].color;
+          checkDuplicateColors();
+        });
+      });
+      document.querySelectorAll('.btn-remove').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const i = +e.target.dataset.idx;
+          const name = state.teams[i].name;
+          state.teams.splice(i,1);
+          $('numTeams').value = state.teams.length;
+          delete lastEvents[name];
+          delete teamPasswords[name];
+          renderTeams(); checkDuplicateColors(); renderMonitor(); renderCofreSelector();
+        });
+      });
+
+      document.querySelectorAll('.btn-angle-send').forEach(btn=>{
+        btn.addEventListener('click', async e=>{
+          const i = +e.target.dataset.idx;
+          const angle = clamp(Number(document.querySelector(`.angle-input[data-idx="${i}"]`).value)||0, 0, 180);
+          await publishCofreAngleByIndex(i, angle);
+        });
+      });
+      document.querySelectorAll('.btn-color-send').forEach(btn=>{
+        btn.addEventListener('click', async e=>{
+          const i = +e.target.dataset.idx;
+          await publishCofreColorByIndex(i);
+        });
+      });
+
+      checkDuplicateColors();
+      renderMonitor();
+      renderCofreSelector(); // atualiza seção de gestão
+    }
+
+    function renderMonitor(){
+      const tbody = $('monitorBody');
+      tbody.innerHTML = '';
+
+      const rows = (state.teams.length ? state.teams.map(t=>{
+        const ev = lastEvents[t.name] || {};
+        const pw = teamPasswords[t.name] || [];
+        return {
+          team: t.name,
+          color: t.color,
+          passwords: pw,
+          cofre: ev.cofre || '—',
+          etapa: ev.etapa || '—',
+          tentativa: ev.tentativa || '—',
+          result: (Number.isInteger(ev.bons) && Number.isInteger(ev.otimos)) ? `${ev.bons}/${ev.otimos}` : '—',
+          ts: ev.ts || 0
+        };
+      }) : Object.entries(lastEvents).map(([team, ev])=>{
+        const pw = teamPasswords[team] || [];
+        return {
+          team, color:'#FFFFFF', passwords: pw,
+          cofre: ev.cofre || '—',
+          etapa: ev.etapa || '—',
+          tentativa: ev.tentativa || '—',
+          result: (Number.isInteger(ev.bons) && Number.isInteger(ev.otimos)) ? `${ev.bons}/${ev.otimos}` : '—',
+          ts: ev.ts || 0
+        };
+      }));
+
+      rows.sort((a,b)=> b.ts - a.ts);
+
+      for (const r of rows){
+        const tr = document.createElement('tr');
+        const pwHtml = (r.passwords.length
+          ? r.passwords.map(p=>`<span class="pw-line">${escapeHtml(p)}</span>`).join("")
+          : '—');
+        tr.innerHTML = `
+          <td>${escapeHtml(r.team)}</td>
+          <td><span class="chip"><span class="sw" style="background:${normalizeHex(r.color)}"></span><span class="small">${normalizeHex(r.color)}</span></span></td>
+          <td>${pwHtml}</td>
+          <td>${escapeHtml(r.cofre)}</td>
+          <td>${escapeHtml(r.etapa)}</td>
+          <td>${escapeHtml(r.tentativa)}</td>
+          <td>${escapeHtml(r.result)}</td>
+          <td class="small">${r.ts ? new Date(r.ts).toLocaleTimeString() : '—'}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    }
+
+    function updateStateFromInputs(){
+      state.numTeams = clamp(Number($('numTeams').value)||1, 1, 50);
+      state.prefix = ($('defaultPrefix').value.trim() || 'equipe');
+      let p = Number($('passwordsPerSafe').value) || 1;
+      state.passwordsPerSafe = clamp(p,1,100);
+      $('passwordsPerSafe').value = state.passwordsPerSafe;
+
+      state.globalAngle = clamp(Number($('globalAngle').value)||67, 0, 180);
+      $('globalAngle').value = state.globalAngle;
+
+      // atualizar opções de etapas na gestão
+      renderEtapaOptions();
+    }
+
+    function checkDuplicateColors(){
+      const seen = new Map(); let hasDup = false;
+      state.teams.forEach((t) => { const c = normalizeHex(t.color); if(seen.has(c)){ hasDup = true; } else seen.set(c, 1); });
+      $('dupWarn').style.display = hasDup ? '' : 'none'; return hasDup;
+    }
+
+    // ---------- MQTT ----------
+    const BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+    let client = null;
+    let connected = false;
+
+    function connectMQTT(){
+      if(client){ try{ client.end(true); }catch{} client=null; }
+      const clientId = 'manager-' + Math.random().toString(16).slice(2);
+      try{
+        client = mqtt.connect(BROKER_URL, { clientId, reconnectPeriod: 2000, clean: true });
+      }catch(err){
+        setStatus('falha'); log('Erro ao conectar: '+err.message); return;
+      }
+      setStatus('conectando…');
+      client.on('connect', ()=>{
+        connected = true; setStatus('conectado', true); log('Conectado a '+BROKER_URL);
+        client.subscribe("+/enviado");
+        client.subscribe("+/resposta");
+        client.subscribe("+/senhaCorreta");  // senhas por equipe (retain)
+        log('Assinado: "+/enviado", "+/resposta" e "+/senhaCorreta"');
+      });
+      client.on('reconnect', ()=> setStatus('reconectando…'));
+      client.on('close', ()=> { connected=false; setStatus('desconectado'); });
+      client.on('error', (err)=> { setStatus('falha'); log('Erro MQTT: '+err.message); });
+
+      client.on('message', (topic, payloadBuf)=>{
+        const payload = payloadBuf.toString();
+
+        if (topic.endsWith('/enviado')){
+          const team = topic.split('/')[0];
+          try{
+            const obj = JSON.parse(payload);
+            const cofre = String(obj.cofre||'');
+            const etapa = String(obj.etapa||'');
+            const tentativa = String(obj.senha||'');
+            lastEvents[team] = { ...(lastEvents[team]||{}), cofre, etapa, tentativa, ts: Date.now() };
+            renderMonitor();
+          }catch{}
+          return;
+        }
+
+        if (topic.endsWith('/resposta')){
+          const team = topic.split('/')[0];
+          let bons=null, otimos=null, cofre=null, etapa=null;
+          try{
+            const obj = JSON.parse(payload);
+            bons = Number(obj.bons); otimos = Number(obj.otimos);
+            cofre = String(obj.cofre||''); etapa = String(obj.etapa||'');
+          }catch{
+            const m = payload.match(/(\d+)\s*Bons?.*?(\d+)\s*Ótimos?/i);
+            if(m){ bons = Number(m[1]); otimos = Number(m[2]); }
+          }
+          const prev = lastEvents[team] || {};
+          lastEvents[team] = { ...prev,
+            cofre: cofre || prev.cofre,
+            etapa: etapa || prev.etapa,
+            bons: Number.isInteger(bons)?bons:prev.bons,
+            otimos: Number.isInteger(otimos)?otimos:prev.otimos,
+            ts: Date.now()
+          };
+          renderMonitor();
+          return;
+        }
+
+        if (topic.endsWith('/senhaCorreta')){
+          const team = topic.split('/')[0];
+          try{
+            const obj = JSON.parse(payload);
+            if (obj && Array.isArray(obj.senhas)){
+              teamPasswords[team] = obj.senhas.map(x => String(x));
+              log(`Senhas recebidas de ${team}: ${obj.senhas.join(", ")}`);
+              renderMonitor();
+            }
+          }catch{}
+          return;
+        }
+      });
+    }
+
+    function publishRetain(topic, payload){
+      if(!client || !connected){ log('⚠ não conectado — não enviado: '+topic); return Promise.resolve(false); }
+      return new Promise((resolve)=> {
+        client.publish(topic, payload, { qos:0, retain:true }, (err)=>{
+          if(err){ log('Erro publish '+topic+': '+err.message); resolve(false); }
+          else { log(`✔ (retain) -> ${topic} : ${payload}`); resolve(true); }
+        });
+      });
+    }
+    function publishNoRetain(topic, payload){
+      if(!client || !connected){ log('⚠ não conectado — não enviado: '+topic); return Promise.resolve(false); }
+      return new Promise((resolve)=> {
+        client.publish(topic, payload, { qos:0, retain:false }, (err)=>{
+          if(err){ log('Erro publish '+topic+': '+err.message); resolve(false); }
+          else { log(`→ ${topic} : ${payload}`); resolve(true); }
+        });
+      });
+    }
+
+    // ---------- Publicadores por COFRE (CONFIG) ----------
+    async function publishCofreAngleByIndex(i, angle){
+      return publishRetain(cofreConfigTopic(i), JSON.stringify({ "angulo-max": clamp(Number(angle)||0, 0, 180) }));
+    }
+    async function publishCofreColorByIndex(i){
+      const rgb = hexToRgb(state.teams[i].color);
+      return publishRetain(cofreConfigTopic(i), JSON.stringify({ cor_equipe: { cor: rgb } }));
+    }
+    async function publishCofreNumAll(){
+      updateStateFromInputs();
+      let sent=0;
+      for(let i=0;i<state.numTeams;i++){
+        const ok = await publishRetain(cofreConfigTopic(i), JSON.stringify({ "num_senhas": state.passwordsPerSafe }));
+        if(ok) sent++;
+      }
+      log(`num_senhas (GLOBAL) enviados p/ cofres: ${sent}/${state.numTeams} (num_senhas=${state.passwordsPerSafe}).`);
+    }
+    async function publishCofreAnglesAll(){
+      updateStateFromInputs();
+      let sent=0;
+      for(let i=0;i<state.numTeams;i++){
+        const ok = await publishCofreAngleByIndex(i, state.globalAngle);
+        if(ok) sent++;
+      }
+      log(`Ângulos enviados p/ cofres: ${sent}/${state.numTeams} (angulo-max=${state.globalAngle}).`);
+    }
+    async function publishCofreColorsAll(){
+      updateStateFromInputs();
+      let sent=0;
+      for(let i=0;i<state.numTeams;i++){
+        const ok = await publishCofreColorByIndex(i);
+        if(ok) sent++;
+      }
+      log(`Cores publicadas p/ cofres: ${sent}/${state.numTeams}.`);
+    }
+    async function publishCofreDefaultsAll(){
+      updateStateFromInputs();
+      for(let i=0;i<state.numTeams;i++){
+        await publishCofreAngleByIndex(i, state.globalAngle);
+        await publishRetain(cofreConfigTopic(i), JSON.stringify({ "num_senhas": state.passwordsPerSafe }));
+        await publishCofreColorByIndex(i);
+      }
+      log(`Config inicial dos cofres enviada (angulo=${state.globalAngle}, num_senhas=${state.passwordsPerSafe}, cor_equipe).`);
+    }
+
+    // ---------- Publicadores por COFRE (COMANDOS) ----------
+    function renderCofreSelector(){
+      const sel = $('cofreSelect');
+      if(!sel) return;
+      sel.innerHTML = `<option value="all">Todos</option>`;
+      for(let i=0;i<state.numTeams;i++){
+        sel.innerHTML += `<option value="${i}">cofre${pad(i+1,2)} (${state.teams[i]?.name||'—'})</option>`;
+      }
+      renderEtapaOptions();
+    }
+
+    function renderEtapaOptions(){
+      const etapaSel = $('selTentandoEtapa');
+      if(!etapaSel) return;
+      const total = clamp(Number(state.passwordsPerSafe)||1,1,100);
+      etapaSel.innerHTML = '';
+      for(let i=1;i<=total;i++){
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = String(i);
+        etapaSel.appendChild(opt);
+      }
+    }
+
+    function rgbByIndex(i0){
+      const hex = state.teams[i0]?.color || '#FFFFFF';
+      return hexToRgb(hex);
+    }
+
+    async function sendSimpleCommand(cmd){
+      const target = $('cofreSelect').value;
+      if(target === 'all'){
+        let sent=0;
+        for(let i=0;i<state.numTeams;i++){
+          const ok = await publishNoRetain(cofreCmdTopic(i), JSON.stringify({ comando: cmd }));
+          if(ok) sent++;
+        }
+        log(`Comando "${cmd}" -> todos (${sent}/${state.numTeams}).`);
+      }else{
+        const i = Number(target);
+        await publishNoRetain(cofreCmdTopic(i), JSON.stringify({ comando: cmd }));
+        log(`Comando "${cmd}" -> ${cofreCmdTopic(i)}.`);
+      }
+    }
+
+    async function sendTentando(){
+      const etapa = clamp(Number($('selTentandoEtapa').value)||1, 1, state.passwordsPerSafe);
+      const tentando = !!$('chkTentando').checked;
+      const target = $('cofreSelect').value;
+
+      if(target === 'all'){
+        let sent=0;
+        for(let i=0;i<state.numTeams;i++){
+          const body = { comando: { tentando, etapa, cor: rgbByIndex(i) } };
+          const ok = await publishNoRetain(cofreCmdTopic(i), JSON.stringify(body));
+          if(ok) sent++;
+        }
+        log(`"tentando" etapa=${etapa} (Todos) -> ${sent}/${state.numTeams}.`);
+      }else{
+        const i = Number(target);
+        const body = { comando: { tentando, etapa, cor: rgbByIndex(i) } };
+        await publishNoRetain(cofreCmdTopic(i), JSON.stringify(body));
+        log(`"tentando" etapa=${etapa} -> ${cofreCmdTopic(i)}.`);
+      }
+    }
+
+    async function sendCorreta(){
+      const target = $('cofreSelect').value;
+      if(target === 'all'){
+        let sent=0;
+        for(let i=0;i<state.numTeams;i++){
+          const body = { comando: "correta", cor: rgbByIndex(i) };
+          const ok = await publishNoRetain(cofreCmdTopic(i), JSON.stringify(body));
+          if(ok) sent++;
+        }
+        log(`"correta" (Todos) -> ${sent}/${state.numTeams}.`);
+      }else{
+        const i = Number(target);
+        const body = { comando: "correta", cor: rgbByIndex(i) };
+        await publishNoRetain(cofreCmdTopic(i), JSON.stringify(body));
+        log(`"correta" -> ${cofreCmdTopic(i)}.`);
+      }
+    }
+
+    // ---------- Fluxos principais ----------
+    async function generateAndPublish(){
+      updateStateFromInputs();
+      state.teams = buildTeams(state.numTeams, state.prefix);
+      renderTeams();
+
+      if(!client || !connected){ log('⚠ Conecte ao MQTT antes de publicar.'); return; }
+      if(checkDuplicateColors()){ log('⚠ Existem cores repetidas — regenere para garantir distinção.'); }
+
+      const roundId = String(Date.now());
+      let sent = 0;
+      for(const t of state.teams){
+        const body = JSON.stringify({ cor: hexNoHashLower(t.color), qtd_senha: state.passwordsPerSafe, round_id: roundId, reset: true });
+        const ok = await publishRetain(t.name, body);
+        if(ok){ sent++; t._lastSentTopic=t.name; t._lastSentBody=body; t._lastRoundId=roundId; t._dirty=false; $('lastPub').textContent = `Última publicação (retain): ${t.name} ${body}`; }
+      }
+      log(`Publicações (retain) de equipes c/ round_id=${roundId}: ${sent}/${state.teams.length}.`);
+
+      await publishCofreDefaultsAll();
+    }
+
+    async function updateChangedTeams(){
+      if(!client || !connected){ log('⚠ Conecte ao MQTT antes de publicar.'); return; }
+      const roundId = String(Date.now());
+      let toSend = state.teams.filter(t => (t._lastSentTopic !== t.name) || (t._lastSentBody !== JSON.stringify({ cor: hexNoHashLower(t.color), qtd_senha: state.passwordsPerSafe, round_id: t._lastRoundId||'', reset: false })) || t._dirty);
+      if(toSend.length === 0){ log('Nada a atualizar — nenhuma equipe mudou desde a última publicação.'); return; }
+      let sent = 0;
+      for(const t of toSend){
+        const body = JSON.stringify({ cor: hexNoHashLower(t.color), qtd_senha: state.passwordsPerSafe, round_id: roundId, reset: true });
+        const ok = await publishRetain(t.name, body);
+        if(ok){ sent++; t._lastSentTopic=t.name; t._lastSentBody=body; t._lastRoundId=roundId; t._dirty=false; $('lastPub').textContent = `Última publicação (retain): ${t.name} ${body}`; }
+      }
+      log(`Atualização (retain) c/ round_id=${roundId}: publicadas ${sent}/${toSend.length} equipes alteradas.`);
+    }
+
+    // ---------- Eventos UI ----------
+    $('btnConnect').addEventListener('click', connectMQTT);
+    $('btnGenerate').addEventListener('click', generateAndPublish);
+    $('btnUpdate').addEventListener('click', updateChangedTeams);
+
+    $('btnSetAngleAll').addEventListener('click', publishCofreAnglesAll);
+    $('btnSetNumSenhasAll').addEventListener('click', publishCofreNumAll);
+    $('btnSetColorsAll').addEventListener('click', publishCofreColorsAll);
+
+    $('numTeams').addEventListener('change', (e) => {
+      const v = clamp(Number(e.target.value)||1, 1, 50);
+      $('numTeams').value = v; state.numTeams = v; renderCofreSelector();
+    });
+    $('defaultPrefix').addEventListener('change', (e)=>{
+      state.prefix = (e.target.value.trim() || 'equipe');
+    });
+    $('passwordsPerSafe').addEventListener('change', () => {
+      let p = clamp(Number($('passwordsPerSafe').value)||1, 1, 100);
+      $('passwordsPerSafe').value = p; state.passwordsPerSafe = p; renderEtapaOptions();
+    });
+    $('globalAngle').addEventListener('change', ()=>{
+      state.globalAngle = clamp(Number($('globalAngle').value)||67, 0, 180);
+      $('globalAngle').value = state.globalAngle;
+    });
+
+    // comandos simples
+    $('cmdAbrir').addEventListener('click', ()=> sendSimpleCommand('abrir'));
+    $('cmdFechar').addEventListener('click', ()=> sendSimpleCommand('fechar'));
+    $('cmdLuz').addEventListener('click',   ()=> sendSimpleCommand('luz'));
+    $('cmdApagar').addEventListener('click', ()=> sendSimpleCommand('apagar'));
+    $('cmdTDir').addEventListener('click',  ()=> sendSimpleCommand('tranca_direita'));
+    $('cmdTEsq').addEventListener('click',  ()=> sendSimpleCommand('tranca_esquerda'));
+
+    // comandos compostos
+    $('cmdTentando').addEventListener('click', sendTentando);
+    $('cmdCorreta').addEventListener('click', sendCorreta);
+
+    // ---------- Boot ----------
+    (function boot(){
+      setStatus('desconectado');
+      $('teamsContainer').innerHTML = '<div class="small" style="color:var(--muted)">Nenhuma equipe gerada. Clique em <b>Gerar padrões & publicar</b>.</div>';
+      renderMonitor();
+      renderCofreSelector();
+    })();
+  </script>
+</body>
+</html>
