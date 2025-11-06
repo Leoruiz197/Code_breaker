@@ -1,0 +1,1 @@
+# Codigo de gestao da dinâmica do cofre
