@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>INFSEC • App (Invasão de Cofres)</title>
+  <style>
+    :root{
+      --bg:#030a03; --panel:#061206; --line:#0a210a;
+      --accent:#FFFFFF; /* padrão branco antes de conectar */
+      --text:#d4ffe6; --muted:#84f7bf;
+      --error:#ff4271; --warn:#ffde59; --radius:16px;
+      --shadow:0 8px 28px rgba(0,255,170,.08), 0 2px 8px rgba(0,255,170,.06);
+      --tap:52px;
+      --dot-red:#ff7070; --dot-green:#29ff87;
+    }
+    *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+    html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, "Fira Code", "Cascadia Code", "Courier New", monospace;
+      -webkit-text-size-adjust:100%;}
+    .wrap{max-width:640px;margin:10px auto;padding:0 14px;}
+    h1{font-size:1.1rem;margin:10px 0 12px;color:var(--accent);letter-spacing:.08em;display:flex;gap:8px;align-items:center}
+    h2{font-size:1rem;margin:16px 0 8px;color:var(--accent);letter-spacing:.06em}
+    .status{margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#051705}
+    .dot{width:8px;height:8px;border-radius:999px;background:#1e3a1e}
+    .ok .dot{background:var(--accent);box-shadow:0 0 10px var(--accent)}
+    .warn{color:#c9f8df}
+    .err{color:var(--error);border-color:#40101c;background:#1a0910}
+    .card{background:linear-gradient(180deg, rgba(5,20,10,.55), rgba(3,10,5,.55));
+      border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:12px;margin:10px 0}
+    label{display:block;font-weight:700;color:var(--accent);font-size:.9rem;margin:6px 0}
+    input,select,textarea,button{width:100%;min-height:var(--tap);font-size:16px;border-radius:12px;border:1px solid var(--line);
+      background:#031006;color:var(--text);padding:10px 12px;outline:none}
+    input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab, var(--accent) 30%, transparent)}
+    .row{display:flex;gap:10px;align-items:center}
+    .row > *{flex:1}
+    .btn{background:var(--accent);color:#041004;border:0;font-weight:800;letter-spacing:.04em;cursor:pointer}
+    .btn.secondary{background:#07240f;color:var(--accent);border:1px solid var(--accent)}
+    .btn:disabled{opacity:.6;filter:grayscale(.6)}
+    .muted{color:var(--muted);font-size:.9rem}
+    .kbd{display:inline-block;padding:2px 6px;border:1px solid var(--line);background:#031006;color:var(--accent);border-radius:6px}
+
+    /* bolinhas/etapas (AGORA MAIORES E CENTRALIZADAS) */
+    .bullets{
+      display:flex;
+      gap:14px;
+      align-items:center;
+      justify-content:center;   /* centraliza na linha */
+      flex-wrap:wrap;
+      margin-top:6px;
+      min-height:40px;
+    }
+    .bullet{
+      width:32px;               /* antes ~18px */
+      height:32px;
+      border-radius:999px;
+      border:2px solid #173c25;
+      background:transparent;
+      box-shadow:inset 0 0 0 4px #00000033;
+      transition:transform .2s ease, box-shadow .2s ease, background .2s ease;
+    }
+    .bullet.red{
+      background:var(--dot-red);
+      box-shadow:0 0 10px #ff707044, inset 0 0 0 4px #00000033;
+    }
+    .bullet.green{
+      background:var(--dot-green);
+      box-shadow:0 0 14px #29ff8744, inset 0 0 0 4px #00000033;
+      transform:scale(1.06);
+    }
+    .accent-border{border-color: color-mix(in oklab, var(--accent) 40%, var(--line));}
+    .swatch{width:36px;height:36px;border-radius:10px;border:1px solid #1a2a1a;box-shadow:inset 0 0 0 3px #00000022;flex:0 0 36px}
+    .score{display:flex;gap:14px;align-items:center;margin-top:8px}
+    .score .pill{padding:6px 10px;border:1px solid var(--line);border-radius:999px;background:#031006}
+    .score b{color:var(--accent)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>
+      INFSEC • APP
+      <span id="status" class="status warn"><span class="dot"></span><span>Desconectado</span></span>
+    </h1>
+
+    <!-- MEU PAINEL -->
+    <div class="card accent-border">
+      <h2>Meu Painel</h2>
+      <div class="row">
+        <div>
+          <label for="teamSel">Minha equipe</label>
+          <select id="teamSel"></select>
+        </div>
+        <div style="flex:0 0 40%">
+          <label>&nbsp;</label>
+          <button id="btnConn" class="btn">Conectar</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- PAINEL DE INVASÃO -->
+    <div class="card accent-border">
+      <h2>Painel de Invasão</h2>
+
+      <div class="row">
+        <div>
+          <label for="safeSel">Cofre de destino</label>
+          <div class="row">
+            <select id="safeSel"></select>
+            <div id="safeSwatch" class="swatch" title="Cor do cofre"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:8px">
+        <input id="code" maxlength="4" inputmode="numeric" pattern="[0-9]*" placeholder="senha de 4 dígitos distintos" />
+        <button id="btnTry" class="btn secondary" style="flex:0 0 40%">Enviar</button>
+      </div>
+      <div class="score">
+        <span class="pill">Bons: <b id="bonsVal">0</b></span>
+        <span class="pill">Ótimos: <b id="otimosVal">0</b></span>
+      </div>
+      <p id="codeHint" class="muted" style="margin-top:6px">Ex.: <span class="kbd">4071</span> — quatro dígitos diferentes.</p>
+
+      <div style="margin-top:10px">
+        <label>Etapas da invasão</label>
+        <div id="bullets" class="bullets"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- mqtt.js -->
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script>
+    // ---------- Helpers ----------
+    const $ = (id) => document.getElementById(id);
+    const pad2 = (n)=> String(n).padStart(2,"0");
+    const isFourDistinctDigits = (s)=> /^\d{4}$/.test(s) && (new Set(s)).size===4;
+
+    // ---------- Estado ----------
+    const BROKER = "wss://broker.hivemq.com:8884/mqtt";
+    let client = null, connected = false;
+
+    // Config do manager: Map { equipeXX -> { color:"#RRGGBB", qtd:Number } }
+    const teamConfigs = new Map();
+
+    let myTeam = "equipe01";
+    let targetSafe = "cofre02"; // não pode ser o próprio
+    let solvedCount = 0;
+    let subTeamResp = null; // tópico atualmente assinado para respostas da minha equipe
+
+    // ---------- Mapeamentos ----------
+    const teamToSafe = (team)=> `cofre${pad2(Number(team.replace(/[^\d]/g,""))||1)}`;
+    const safeToTeam = (safe)=> `equipe${pad2(Number(safe.replace(/[^\d]/g,""))||1)}`;
+
+    // ---------- Tema ----------
+    function setThemeWhite(){
+      document.documentElement.style.setProperty("--accent", "#FFFFFF");
+      document.documentElement.style.setProperty("--dot-green", "#29FF87");
+    }
+    function applyAccentFromTeam(team){
+      if(!connected) return;
+      const cfg = teamConfigs.get(team);
+      const hex = (cfg?.color || "#FFFFFF").toUpperCase();
+      document.documentElement.style.setProperty("--accent", hex);
+      document.documentElement.style.setProperty("--dot-green", hex);
+    }
+
+    function getColorForSafe(safe){
+      const team = safeToTeam(safe);
+      const color = teamConfigs.get(team)?.color;
+      return color || "#FFFFFF";
+    }
+    function updateSafeSwatch(){
+      $("safeSwatch").style.background = getColorForSafe($("safeSel").value);
+    }
+
+    // ---------- Listas ----------
+    function fillTeamsFromConfigs(){
+      const sel = $("teamSel");
+      sel.innerHTML = "";
+      const keys = Array.from(teamConfigs.keys()).sort();
+      const list = keys.length ? keys : Array.from({length:50},(_,i)=>`equipe${pad2(i+1)}`);
+      for(const k of list){
+        const o=document.createElement("option"); o.value=k; o.textContent=k; sel.appendChild(o);
+      }
+      if(!list.includes(myTeam)) myTeam = list[0];
+      sel.value = myTeam;
+      applyAccentFromTeam(myTeam);
+      fillSafesFromConfigs();
+    }
+
+    function buildSafesList(){
+      const count = teamConfigs.size || 10;
+      const myForbiddenSafe = teamToSafe(myTeam);
+      const all = Array.from({length:count},(_,i)=>`cofre${pad2(i+1)}`);
+      return all.filter(name => name !== myForbiddenSafe);
+    }
+
+    function fillSafesFromConfigs(){
+      const sel = $("safeSel");
+      sel.innerHTML = "";
+      const safes = buildSafesList();
+      for(const name of safes){
+        const o=document.createElement("option"); o.value=name; o.textContent=name; sel.appendChild(o);
+      }
+      if(!safes.includes(targetSafe)) targetSafe = safes[0] || "cofre02";
+      sel.value = targetSafe;
+      updateSafeSwatch();
+      solvedCount = 0;
+      syncBulletsWithSelectedSafe();
+      resetScores();
+    }
+
+    function getTotalStagesForCurrentSafe(){
+      const team = safeToTeam($("safeSel").value);
+      return Math.max(1, Math.min(100, Number(teamConfigs.get(team)?.qtd || 1)));
+    }
+
+    function renderBullets(total, solved){
+      const wrap = $("bullets");
+      wrap.innerHTML = "";
+      for(let i=0;i<total;i++){
+        const b = document.createElement("div");
+        b.className = "bullet " + (i < solved ? "green" : "red"); // começa VERMELHO, fica VERDE ao acertar
+        b.setAttribute("aria-label", `Etapa ${i+1} ${i<solved?"concluída":"pendente"}`);
+        wrap.appendChild(b);
+      }
+    }
+    function syncBulletsWithSelectedSafe(){
+      renderBullets(getTotalStagesForCurrentSafe(), solvedCount);
+    }
+    function resetScores(){
+      $("bonsVal").textContent = "0";
+      $("otimosVal").textContent = "0";
+    }
+
+    function currentStageName(){
+      const total = getTotalStagesForCurrentSafe();
+      if(solvedCount >= total) return null;
+      return `etapa${pad2(solvedCount + 1)}`;
+    }
+
+    // ---------- MQTT ----------
+    function subscribeTeamResponse(){
+      if(!client || !connected) return;
+      const newTopic = `${myTeam}/resposta`;
+      if(subTeamResp && subTeamResp !== newTopic){
+        try{ client.unsubscribe(subTeamResp); }catch{}
+      }
+      subTeamResp = newTopic;
+      client.subscribe(newTopic);
+    }
+
+    function connect(){
+      if(client){ disconnect(); }
+      const clientId = "app-" + Math.random().toString(16).slice(2);
+      try{
+        client = mqtt.connect(BROKER, { clientId, reconnectPeriod: 2000, clean: true });
+      }catch(err){
+        setStatus("err","Erro ao conectar: " + err.message); return;
+      }
+      setStatus("warn","Conectando...");
+
+      client.on("connect", ()=>{
+        connected = true;
+        setStatus("ok","Conectado");
+        applyAccentFromTeam(myTeam);
+
+        // Assina configs (manager) em equipeNN
+        for(let i=1;i<=50;i++){
+          client.subscribe(`equipe${pad2(i)}`);
+        }
+
+        // Assina respostas da minha equipe
+        subscribeTeamResponse();
+      });
+      client.on("reconnect", ()=> setStatus("warn","Reconectando..."));
+      client.on("close", ()=> { connected=false; setStatus("warn","Desconectado"); setThemeWhite(); });
+      client.on("error", (err)=> setStatus("err","Erro: " + err.message));
+
+      client.on("message", (topic, payloadBuf, packet)=>{
+        // ignorar retain (evita respostas antigas)
+        if (packet && packet.retain) return;
+
+        const payload = payloadBuf.toString();
+
+        // 1) CONFIG do manager (equipeNN)
+        if(topic.startsWith("equipe") && !topic.includes("/")){
+          try{
+            const obj = JSON.parse(payload);
+            if(obj && typeof obj === "object" && typeof obj.cor === "string" && "qtd_senha" in obj){
+              const color = "#"+obj.cor.replace("#","").slice(0,6);
+              const qtd = Number(obj.qtd_senha)||1;
+              teamConfigs.set(topic, { color, qtd });
+              fillTeamsFromConfigs();
+              if(topic === myTeam) applyAccentFromTeam(myTeam);
+              updateSafeSwatch();
+              return;
+            }
+          }catch{/* não era config */}
+          return;
+        }
+
+        // 2) Resposta do gestor para a MINHA equipe: equipeXX/resposta
+        if(topic === `${myTeam}/resposta`){
+          try{
+            const obj = JSON.parse(payload);
+            if(obj && typeof obj === "object"){
+              // Mostrar APENAS os números de bons/ótimos quando houver hint
+              if(String(obj.status).toLowerCase() === "hint"){
+                $("bonsVal").textContent   = Number(obj.bons ?? 0);
+                $("otimosVal").textContent = Number(obj.otimos ?? 0);
+              }
+              // Sucesso de etapa -> acende bolinha e reseta contadores
+              if(String(obj.status).toLowerCase() === "ok"){
+                const total = getTotalStagesForCurrentSafe();
+                const etapaMsg = String(obj.etapa || "").toLowerCase();
+                const etapaEsperada = (currentStageName()||"").toLowerCase();
+                if(!etapaMsg || etapaMsg === etapaEsperada){
+                  solvedCount = Math.min(total, solvedCount + 1);
+                  renderBullets(total, solvedCount);
+                  resetScores(); // zera os contadores para próxima etapa
+                }
+              }
+            }
+          }catch{
+            // Se vier texto por engano, não tentamos interpretar
+          }
+        }
+      });
+    }
+
+    function setStatus(kind,text){
+      const el=$("status");
+      el.className = "status " + kind;
+      el.querySelector("span:last-child").textContent = text;
+    }
+
+    function disconnect(){
+      try{ client?.end(true); }catch{}
+      client=null; connected=false;
+      setStatus("warn","Desconectado");
+      setThemeWhite();
+    }
+
+    function sendAttempt(){
+      if(!client || !connected) return;
+      const code = $("code").value.trim();
+      if(!isFourDistinctDigits(code)){
+        $("codeHint").innerHTML = '<span style="color:#ff9aa2">Formato inválido. Use quatro dígitos <strong>distintos</strong>.</span>';
+        return;
+      }
+      const total = getTotalStagesForCurrentSafe();
+      if(solvedCount >= total){
+        $("codeHint").innerHTML = '<span style="color:var(--accent)">Todas as etapas já foram concluídas para este cofre.</span>';
+        return;
+      }
+      const etapa = currentStageName(); // etapa01, etapa02, ...
+      const payload = JSON.stringify({ cofre: $("safeSel").value, etapa, senha: code });
+      client.publish(`${myTeam}/enviado`, payload);
+      $("codeHint").innerHTML = `<span style="color:var(--accent)">Enviado ${etapa}. Aguardando retorno…</span>`;
+    }
+
+    // ---------- Eventos ----------
+    $("btnConn").addEventListener("click", ()=> client ? disconnect() : connect());
+
+    $("teamSel").addEventListener("change", ()=>{
+      myTeam = $("teamSel").value;
+      applyAccentFromTeam(myTeam);
+      // ao trocar de equipe, refaz cofres (removendo o próprio)
+      fillSafesFromConfigs();
+      // re-assina respostas da nova equipe
+      if(connected) subscribeTeamResponse();
+    });
+
+    $("safeSel").addEventListener("change", ()=>{
+      solvedCount = 0;
+      updateSafeSwatch();
+      syncBulletsWithSelectedSafe();
+      resetScores();
+    });
+
+    $("btnTry").addEventListener("click", sendAttempt);
+    $("code").addEventListener("keydown", (e)=>{ if(e.key==="Enter") sendAttempt(); });
+
+    // ---------- Boot ----------
+    (function boot(){
+      setThemeWhite();
+
+      // listas default até o manager publicar
+      const teamSel = $("teamSel");
+      for(let i=1;i<=10;i++){
+        const v=`equipe${pad2(i)}`;
+        const o=document.createElement("option");
+        o.value=v; o.textContent=v; teamSel.appendChild(o);
+      }
+      teamSel.value = myTeam = "equipe01";
+
+      // cofres (não mostra o próprio)
+      const myForbiddenSafe = teamToSafe(myTeam);
+      const safeSel = $("safeSel");
+      const defaults = Array.from({length:10},(_,i)=>`cofre${pad2(i+1)}`).filter(n=>n!==myForbiddenSafe);
+      for(const v of defaults){
+        const o=document.createElement("option"); o.value=v; o.textContent=v; safeSel.appendChild(o);
+      }
+      targetSafe = $("safeSel").value = defaults[0] || "cofre02";
+
+      updateSafeSwatch();
+      renderBullets(1, 0);  // inicia tudo VERMELHO
+      resetScores();
+    })();
+  </script>
+</body>
+</html>
